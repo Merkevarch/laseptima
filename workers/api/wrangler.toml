@@ -1,0 +1,13 @@
+name = "laseptima-api"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+APPWRITE_ENDPOINT = "https://cloud.appwrite.io/v1"
+APPWRITE_PROJECT = ""
+APPWRITE_API_KEY = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "laseptima-db"
+database_id = "local-laseptima"
