@@ -4,10 +4,8 @@ compatibility_date = "2024-01-01"
 
 [vars]
 APPWRITE_ENDPOINT = "https://cloud.appwrite.io/v1"
-APPWRITE_PROJECT = ""
-APPWRITE_API_KEY = ""
+APPWRITE_PROJECT = "69fe3625003ce05edab5"
+APPWRITE_DATABASE_ID = "69fe36d7002894d4896a"
 
-[[d1_databases]]
-binding = "DB"
-database_name = "laseptima-db"
-database_id = "local-laseptima"
+# Set the API key as a secret (never commit real keys to code)
+# Run: wrangler secret put APPWRITE_API_KEY

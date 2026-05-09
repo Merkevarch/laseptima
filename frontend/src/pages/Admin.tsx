@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { databases, Query } from '../lib/appwrite'
+import { useNavigate } from 'react-router-dom'
+import { databases } from '../lib/appwrite'
 import { useAppwrite } from '../contexts/AppwriteContext'
 
 type Producto = {
@@ -14,6 +15,7 @@ export default function Admin() {
   const [productos, setProductos] = useState<Producto[]>([])
   const [loading, setLoading] = useState(true)
   const { logout } = useAppwrite()
+  const navigate = useNavigate()
 
   useEffect(() => {
     loadProductos()
@@ -54,13 +56,13 @@ export default function Admin() {
   return (
     <div className="p-4 bg-white min-h-screen">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Administración</h1>
+        <h1 className="text-3xl font-bold">Administracion</h1>
         <button onClick={logout} className="px-4 py-2 bg-danger text-white rounded">
           Salir
         </button>
       </div>
 
-      <h2 className="text-xl font-semibold mb-4">Menú del día</h2>
+      <h2 className="text-xl font-semibold mb-4">Menu del dia</h2>
       <div className="space-y-2">
         {productos.map(p => (
           <div key={p.$id} className="flex items-center justify-between p-3 border rounded">

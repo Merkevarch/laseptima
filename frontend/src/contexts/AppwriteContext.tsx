@@ -43,7 +43,7 @@ export const AppwriteProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }
 
   const loginAdmin = async (email: string, password: string) => {
-    await account.createEmailPasswordSession(email, password)
+    await account.createEmailSession(email, password)
     await checkSession()
   }
 
