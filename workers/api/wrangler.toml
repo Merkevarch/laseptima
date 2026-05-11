@@ -2,10 +2,9 @@ name = "laseptima-api"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
+# Variables de entorno - NO poner secrets aqui
+# Usar: wrangler secret put APPWRITE_API_KEY
+# Usar: wrangler secret put JWT_SECRET
+
 [vars]
 APPWRITE_ENDPOINT = "https://cloud.appwrite.io/v1"
-APPWRITE_PROJECT = "69fe3625003ce05edab5"
-APPWRITE_DATABASE_ID = "69fe36d7002894d4896a"
-
-# Set the API key as a secret (never commit real keys to code)
-# Run: wrangler secret put APPWRITE_API_KEY

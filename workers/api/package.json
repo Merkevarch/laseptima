@@ -8,8 +8,8 @@
     "build": "tsc"
   },
   "dependencies": {
-    "appwrite": "^13.0.0",
-    "hono": "^4.0.0"
+    "hono": "^4.0.0",
+    "node-appwrite": "^11.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240101.0",

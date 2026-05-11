@@ -1,9 +1,16 @@
-const { Client, Databases, Query } = require('/home/z/my-project/laseptima/node_modules/node-appwrite');
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-const APPWRITE_ENDPOINT = 'https://cloud.appwrite.io/v1';
-const APPWRITE_PROJECT_ID = '69fe3625003ce05edab5';
-const APPWRITE_DATABASE_ID = '69fe36d7002894d4896a';
-const APPWRITE_API_KEY = 'standard_d157e60086e5f8401f6c7eaba3d9229ebd301829a6fb855d95dbcefb04f22a54713a732c81a72c4941c522fad5b71ed4a352d5495c6e98d7d87d8d0cf1eb7782db01ccc9ec8b2be4a26c8dbff569e8689416f9abe93133aa6ac48960161169cd32fe746b863a9087cebc538f3b4c514d5506e46d6e0325c1abec2d85b9017515';
+const { Client, Databases, Query } = require('node-appwrite');
+
+const APPWRITE_ENDPOINT = process.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1';
+const APPWRITE_PROJECT_ID = process.env.APPWRITE_PROJECT_ID || '';
+const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID || '';
+const APPWRITE_API_KEY = process.env.APPWRITE_API_KEY || '';
+
+if (!APPWRITE_PROJECT_ID || !APPWRITE_API_KEY) {
+  console.error('\x1b[31m[ERROR] Falta APPWRITE_PROJECT_ID o APPWRITE_API_KEY en .env\x1b[0m');
+  process.exit(1);
+}
 
 const client = new Client()
   .setEndpoint(APPWRITE_ENDPOINT)

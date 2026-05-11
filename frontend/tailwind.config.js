@@ -4,11 +4,17 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        mesaLibre: '#4CAF50',
-        mesaOcupada: '#FFC107',
-        primary: '#2196F3',
-        danger: '#DC2626'
-      }
+        primary: {
+          50: '#eff6ff',
+          100: '#dbeafe',
+          200: '#bfdbfe',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+        },
+      },
     }
   },
   plugins: []

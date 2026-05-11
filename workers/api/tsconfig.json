@@ -3,13 +3,14 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Node",
-    "lib": ["ES2022"],
-    "strict": true,
+    "lib": ["ES2022", "WebWorker"],
+    "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "types": ["@cloudflare/workers-types"]
   },
   "include": ["src"]
 }

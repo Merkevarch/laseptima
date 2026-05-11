@@ -8,14 +8,17 @@ export type Mesa = {
 export type Producto = {
   $id: string
   nombre: string
+  descripcion?: string
   precio: number
   categoria: string
   disponible_hoy: boolean
+  imagen_url?: string
 }
 
 export type Pedido = {
   $id: string
   mesa_id: string
+  mesero_id?: string
   fecha_hora: string
   total: number
   estado: 'activo' | 'facturado' | 'cancelado'
@@ -28,6 +31,7 @@ export type PedidoDetalle = {
   cantidad: number
   precio_unitario: number
   notas?: string
+  estado_item: 'pendiente' | 'preparando' | 'listo' | 'entregado' | 'impreso'
 }
 
 export type Factura = {
@@ -36,6 +40,24 @@ export type Factura = {
   ticket_numero: string
   metodo_pago: 'efectivo' | 'tarjeta' | 'transferencia'
   subtotal: number
+  propina: number
+  fecha: string
+}
+
+export type Mesero = {
+  $id: string
+  nombre: string
+  pin: string
+  telefono?: string
+  activo: boolean
+}
+
+export type Categoria = {
+  $id: string
+  nombre: string
+  descripcion?: string
+  icono?: string
+  orden: number
 }
 
 export type UserRole = 'admin' | 'mesero'
