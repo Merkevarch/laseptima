@@ -5,11 +5,11 @@ const APPWRITE_ENDPOINT = import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://clo
 const APPWRITE_PROJECT = import.meta.env.VITE_APPWRITE_PROJECT || ''
 const DB_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID || ''
 
-// API_BASE: Use relative paths (/api/...) so requests go to the same origin.
-// In production, Cloudflare Pages Function (functions/api/[[route]].ts) proxies
-// these to the Worker API. In development, Vite's dev server proxy handles it.
-// Optionally, VITE_API_URL can still be set to override (e.g., direct Worker URL).
-const API_BASE = import.meta.env.VITE_API_URL || ''
+// API_BASE: relative paths (/api/...) go to the same origin.
+// In production, Cloudflare Pages Function (functions/api/[[route]].ts) handles API.
+// In development, Vite's dev server proxy (/api → localhost:8787) handles it.
+// No need for VITE_API_URL - everything is same-origin.
+const API_BASE = ''
 
 type UserRole = 'admin' | 'mesero' | null
 
@@ -75,10 +75,10 @@ export const AppwriteProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLoading(false)
   }
 
-  // ── Admin login (via Worker API - no CORS issues) ──
+  // ── Admin login (via Pages Function API - no CORS issues) ──
   const loginAdmin = async (email: string, password: string) => {
-    // All auth goes through the Worker API (server-to-server with Appwrite)
-    // This avoids CORS issues since the browser only talks to our Worker
+    // All auth goes through our API (server-to-server with Appwrite)
+    // This avoids CORS issues since the browser only talks to same-origin
     const response = await fetch(`${API_BASE}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
