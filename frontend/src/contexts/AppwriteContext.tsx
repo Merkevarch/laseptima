@@ -60,7 +60,12 @@ export const AppwriteProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }
 
   const logout = async () => {
-    await account.deleteSession('current')
+    try {
+      await account.deleteSession('current')
+    } catch (error) {
+      // Ignorar error si no hay sesión de Appwrite (caso mesero)
+      console.log('No hay sesión de Appwrite para eliminar')
+    }
     setUser(null)
     setRole(null)
   }

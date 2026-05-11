@@ -40,14 +40,22 @@ export default function Mesas() {
     <div className="p-4 bg-white min-h-screen">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Mesas</h1>
-        {role === 'admin' && (
+        <div className="flex gap-2">
+          {role === 'admin' && (
+            <button
+              onClick={() => navigate('/admin')}
+              className="px-4 py-2 bg-primary text-white rounded"
+            >
+              Admin
+            </button>
+          )}
           <button
-            onClick={() => navigate('/admin')}
-            className="px-4 py-2 bg-primary text-white rounded"
+            onClick={logout}
+            className="px-4 py-2 bg-red-500 text-white rounded"
           >
-            Admin
+            Cerrar Sesión
           </button>
-        )}
+        </div>
       </div>
       
       <div className="grid grid-cols-3 gap-4">
