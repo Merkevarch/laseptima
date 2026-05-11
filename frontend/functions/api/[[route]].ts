@@ -1,23 +1,23 @@
 /**
- * Cloudflare Pages Function - API completa
+ * Cloudflare Pages Function - API completa (sin node-appwrite)
  *
- * Toda la lógica del API está aquí, no se necesita un Worker separado.
- * Se despliega automáticamente con cada push a GitHub.
+ * Usa fetch() directamente a la REST API de Appwrite.
+ * No depende de node-appwrite ni modulos nativos de Node.js.
+ * Se despliega automaticamente con cada push a GitHub.
  *
- * Variables de entorno (configurar en Cloudflare Pages > Settings > Environment variables):
+ * Variables de entorno (Cloudflare Pages > Settings > Environment variables):
  * - APPWRITE_ENDPOINT: https://cloud.appwrite.io/v1
  * - APPWRITE_PROJECT: tu-project-id
- * - APPWRITE_API_KEY: tu-api-key (SECRET)
+ * - APPWRITE_API_KEY: tu-api-key (Encrypt)
  * - APPWRITE_DATABASE_ID: tu-database-id
- * - JWT_SECRET: tu-jwt-secret (SECRET)
+ * - JWT_SECRET: tu-jwt-secret (Encrypt)
  */
 
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { sign, verify } from 'hono/jwt'
-import { Client, Databases, Query, Users } from 'node-appwrite'
 
-type Bindings = {
+type Env = {
   APPWRITE_ENDPOINT: string
   APPWRITE_PROJECT: string
   APPWRITE_API_KEY: string
@@ -33,11 +33,7 @@ type JwtPayload = {
   exp: number
 }
 
-type Variables = {
-  user: JwtPayload
-}
-
-const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
+const app = new Hono<{ Bindings: Env }>()
 
 // ── CORS ──
 app.use('*', cors({
@@ -46,26 +42,91 @@ app.use('*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }))
 
-// ── Helper: create Appwrite server client ──
-function createServerClient(c: { env: Bindings }) {
-  const client = new Client()
-    .setEndpoint(c.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1')
-    .setProject(c.env.APPWRITE_PROJECT)
-    .setKey(c.env.APPWRITE_API_KEY)
-  return new Databases(client)
+// ── Helper: Appwrite REST API headers ──
+function appwriteHeaders(env: Env, session?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Appwrite-Project': env.APPWRITE_PROJECT,
+    'X-Appwrite-Key': env.APPWRITE_API_KEY,
+  }
+  if (session) {
+    headers['X-Appwrite-Session'] = session
+  }
+  return headers
 }
 
-// ── Helper: cast Appwrite Document to typed object ──
-function asDoc<T>(doc: any): T & { $id: string } {
-  return doc as T & { $id: string }
+function getEndpoint(env: Env): string {
+  return (env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1').replace(/\/+$/, '')
 }
 
-type MeseroDoc = { nombre: string; pin: string; activo: boolean }
-type CounterDoc = { nombre: string; valor: number }
-type PedidoDoc = { mesa_id: string; mesero_id: string; fecha_hora: string; total: number; estado: string }
+// ── Helper: List documents with queries ──
+async function listDocuments(env: Env, collectionId: string, queries: string[] = []): Promise<any> {
+  const url = `${getEndpoint(env)}/databases/${env.APPWRITE_DATABASE_ID}/collections/${collectionId}/documents`
+  const body = queries.length > 0 ? JSON.stringify({ queries }) : undefined
+  const res = await fetch(url, {
+    method: 'POST', // Appwrite uses POST for listDocuments with queries
+    headers: appwriteHeaders(env),
+    body: body || undefined,
+  })
+  // Try POST first, if method not allowed, try GET
+  if (res.status === 405) {
+    const getRes = await fetch(`${url}?queries[]=${queries.map(q => encodeURIComponent(q)).join('&queries[]=')}`, {
+      headers: appwriteHeaders(env),
+    })
+    return getRes.json()
+  }
+  return res.json()
+}
+
+// ── Helper: Get document ──
+async function getDocument(env: Env, collectionId: string, docId: string): Promise<any> {
+  const url = `${getEndpoint(env)}/databases/${env.APPWRITE_DATABASE_ID}/collections/${collectionId}/documents/${docId}`
+  const res = await fetch(url, { headers: appwriteHeaders(env) })
+  if (!res.ok) throw new Error(`Appwrite error: ${res.status}`)
+  return res.json()
+}
+
+// ── Helper: Create document ──
+async function createDocument(env: Env, collectionId: string, documentId: string, data: Record<string, any>): Promise<any> {
+  const url = `${getEndpoint(env)}/databases/${env.APPWRITE_DATABASE_ID}/collections/${collectionId}/documents`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: appwriteHeaders(env),
+    body: JSON.stringify({ documentId, data }),
+  })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.message || 'Error creando documento')
+  }
+  return res.json()
+}
+
+// ── Helper: Update document ──
+async function updateDocument(env: Env, collectionId: string, docId: string, data: Record<string, any>): Promise<any> {
+  const url = `${getEndpoint(env)}/databases/${env.APPWRITE_DATABASE_ID}/collections/${collectionId}/documents/${docId}`
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: appwriteHeaders(env),
+    body: JSON.stringify({ data }),
+  })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.message || 'Error actualizando documento')
+  }
+  return res.json()
+}
+
+// ── Helper: Delete document ──
+async function deleteDocument(env: Env, collectionId: string, docId: string): Promise<void> {
+  const url = `${getEndpoint(env)}/databases/${env.APPWRITE_DATABASE_ID}/collections/${collectionId}/documents/${docId}`
+  await fetch(url, {
+    method: 'DELETE',
+    headers: appwriteHeaders(env),
+  })
+}
 
 // ═══════════════════════════════════════
-// PUBLIC ENDPOINTS (no auth required)
+// PUBLIC ENDPOINTS
 // ═══════════════════════════════════════
 
 // ── Health check ──
@@ -83,7 +144,7 @@ app.get('/api/health', (c) => {
   })
 })
 
-// ── Mesero Login → returns JWT ──
+// ── Mesero Login → JWT ──
 app.post('/api/mesero/login', async (c) => {
   const { pin } = await c.req.json<{ pin: string }>()
 
@@ -92,19 +153,26 @@ app.post('/api/mesero/login', async (c) => {
   }
 
   try {
-    const databases = createServerClient(c)
-    const dbId = c.env.APPWRITE_DATABASE_ID
+    // Query meseros by pin and activo
+    const url = `${getEndpoint(c.env)}/databases/${c.env.APPWRITE_DATABASE_ID}/collections/meseros/documents`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: appwriteHeaders(c.env),
+      body: JSON.stringify({
+        queries: [
+          JSON.stringify({ method: 'equal', attribute: 'pin', values: [pin] }),
+          JSON.stringify({ method: 'equal', attribute: 'activo', values: [true] }),
+        ]
+      }),
+    })
 
-    const result = await databases.listDocuments(dbId, 'meseros', [
-      Query.equal('pin', pin),
-      Query.equal('activo', true),
-    ])
+    const data = await res.json()
 
-    if (result.documents.length === 0) {
+    if (!data.documents || data.documents.length === 0) {
       return c.json({ error: 'PIN incorrecto' }, 401)
     }
 
-    const mesero = asDoc<MeseroDoc>(result.documents[0])
+    const mesero = data.documents[0]
 
     // Generate JWT
     const payload: JwtPayload = {
@@ -112,7 +180,7 @@ app.post('/api/mesero/login', async (c) => {
       name: mesero.nombre,
       role: 'mesero',
       iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60), // 8 hours
+      exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60),
     }
 
     const token = await sign(payload, c.env.JWT_SECRET)
@@ -129,7 +197,7 @@ app.post('/api/mesero/login', async (c) => {
   }
 })
 
-// ── Admin Login → returns JWT ──
+// ── Admin Login → JWT ──
 app.post('/api/admin/login', async (c) => {
   const { email, password } = await c.req.json<{ email: string; password: string }>()
 
@@ -138,61 +206,63 @@ app.post('/api/admin/login', async (c) => {
   }
 
   try {
-    const endpoint = c.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1'
+    const endpoint = getEndpoint(c.env)
     const projectId = c.env.APPWRITE_PROJECT
 
-    // Step 1: Validate credentials by creating a session server-side via REST API
-    const sessionResponse = await fetch(`${endpoint}/account/sessions/email`, {
+    // Step 1: Create session server-side to validate credentials
+    const sessionRes = await fetch(`${endpoint}/account/sessions/email`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Appwrite-Project': projectId,
         'X-Appwrite-Key': c.env.APPWRITE_API_KEY,
       },
-      body: JSON.stringify({
-        userId: email,
-        email,
-        password,
-      }),
+      body: JSON.stringify({ userId: email, email, password }),
     })
 
-    if (!sessionResponse.ok) {
-      const errorData = await sessionResponse.json() as any
-      console.error('Appwrite session error:', errorData.message)
+    if (!sessionRes.ok) {
+      const errData = await sessionRes.json() as any
+      console.error('Appwrite session error:', errData.message)
       return c.json({ error: 'Credenciales incorrectas' }, 401)
     }
 
-    const sessionData = await sessionResponse.json() as any
+    const sessionData = await sessionRes.json() as any
     const userId = sessionData.userId || sessionData.$id
 
-    // Step 2: Verify the user has the 'admin' label
-    const adminClient = new Client()
-      .setEndpoint(endpoint)
-      .setProject(projectId)
-      .setKey(c.env.APPWRITE_API_KEY)
-
-    const users = new Users(adminClient)
+    // Step 2: Get user info and verify admin label
+    const userRes = await fetch(`${endpoint}/users/${userId}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Appwrite-Project': projectId,
+        'X-Appwrite-Key': c.env.APPWRITE_API_KEY,
+      },
+    })
 
     let adminUser: any
-    try {
-      adminUser = await users.get(userId)
-    } catch {
-      // Fallback: try to find by email
-      const adminUsers = await users.list([
-        Query.equal('email', email),
-      ])
-      if (adminUsers.total === 0) {
+    if (userRes.ok) {
+      adminUser = await userRes.json()
+    } else {
+      // Fallback: list users by email
+      const listRes = await fetch(`${endpoint}/users?queries[]=${encodeURIComponent(JSON.stringify({ method: 'equal', attribute: 'email', values: [email] }))}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Appwrite-Project': projectId,
+          'X-Appwrite-Key': c.env.APPWRITE_API_KEY,
+        },
+      })
+      const listData = await listRes.json() as any
+      if (!listData.users || listData.users.length === 0) {
         return c.json({ error: 'Credenciales incorrectas' }, 401)
       }
-      adminUser = adminUsers.users[0]
+      adminUser = listData.users[0]
     }
 
-    // Check if user has admin label
+    // Check admin label
     if (!adminUser.labels?.includes('admin')) {
       return c.json({ error: 'Acceso denegado - no es administrador' }, 403)
     }
 
-    // Step 3: Delete the Appwrite session (we only use JWT, not Appwrite sessions)
+    // Step 3: Delete Appwrite session (we only use JWT)
     try {
       await fetch(`${endpoint}/account/sessions/${sessionData.$id}`, {
         method: 'DELETE',
@@ -202,9 +272,7 @@ app.post('/api/admin/login', async (c) => {
           'X-Appwrite-Session': sessionData.$id,
         },
       })
-    } catch {
-      // Ignore cleanup errors
-    }
+    } catch { /* ignore */ }
 
     // Step 4: Generate our JWT
     const payload: JwtPayload = {
@@ -212,7 +280,7 @@ app.post('/api/admin/login', async (c) => {
       name: adminUser.name || adminUser.email,
       role: 'admin',
       iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60), // 8 hours
+      exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60),
     }
 
     const token = await sign(payload, c.env.JWT_SECRET)
@@ -230,10 +298,9 @@ app.post('/api/admin/login', async (c) => {
 })
 
 // ═══════════════════════════════════════
-// PROTECTED ENDPOINTS (JWT required)
+// AUTH MIDDLEWARE
 // ═══════════════════════════════════════
 
-// ── Auth middleware ──
 const authMiddleware = async (c: any, next: any) => {
   const authHeader = c.req.header('Authorization')
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -243,21 +310,21 @@ const authMiddleware = async (c: any, next: any) => {
   const token = authHeader.split(' ')[1]
   try {
     const payload = await verify(token, c.env.JWT_SECRET, 'HS256') as JwtPayload
-
-    // Check expiration
     if (payload.exp < Math.floor(Date.now() / 1000)) {
       return c.json({ error: 'Token expirado' }, 401)
     }
-
-    // Attach user to context
     c.set('user', payload)
     await next()
-  } catch (error) {
+  } catch {
     return c.json({ error: 'Token invalido' }, 401)
   }
 }
 
-// ── Create Pedido (batch) ──
+// ═══════════════════════════════════════
+// PROTECTED ENDPOINTS
+// ═══════════════════════════════════════
+
+// ── Create Pedido ──
 app.post('/api/pedidos', authMiddleware, async (c) => {
   const user = c.get('user') as JwtPayload
   const body = await c.req.json<{
@@ -276,12 +343,9 @@ app.post('/api/pedidos', authMiddleware, async (c) => {
     return c.json({ error: 'mesa_id e items son requeridos' }, 400)
   }
 
-  const databases = createServerClient(c)
-  const dbId = c.env.APPWRITE_DATABASE_ID
-
   try {
     // 1. Create pedido
-    const pedido = await databases.createDocument(dbId, 'pedidos', 'unique()', {
+    const pedido = await createDocument(c.env, 'pedidos', 'unique()', {
       mesa_id: body.mesa_id,
       mesero_id: user.sub,
       fecha_hora: new Date().toISOString(),
@@ -289,11 +353,11 @@ app.post('/api/pedidos', authMiddleware, async (c) => {
       estado: 'activo',
     })
 
-    // 2. Create all items
+    // 2. Create items
     const createdItems: any[] = []
     try {
       for (const item of body.items) {
-        const detail = await databases.createDocument(dbId, 'pedidos_detalle', 'unique()', {
+        const detail = await createDocument(c.env, 'pedidos_detalle', 'unique()', {
           pedido_id: pedido.$id,
           producto_id: item.producto_id,
           cantidad: item.cantidad,
@@ -304,19 +368,16 @@ app.post('/api/pedidos', authMiddleware, async (c) => {
         createdItems.push(detail)
       }
     } catch (itemError) {
-      // Compensation: delete already created items and the pedido
-      console.error('Error creando item, aplicando compensacion:', itemError)
+      // Compensation: delete created items and pedido
       for (const item of createdItems) {
-        try { await databases.deleteDocument(dbId, 'pedidos_detalle', item.$id) } catch (e) { /* ignore */ }
+        try { await deleteDocument(c.env, 'pedidos_detalle', item.$id) } catch {}
       }
-      try { await databases.deleteDocument(dbId, 'pedidos', pedido.$id) } catch (e) { /* ignore */ }
+      try { await deleteDocument(c.env, 'pedidos', pedido.$id) } catch {}
       return c.json({ error: 'Error creando items del pedido' }, 500)
     }
 
     // 3. Update mesa status
-    await databases.updateDocument(dbId, 'mesas', body.mesa_id, {
-      estado: 'ocupada',
-    })
+    await updateDocument(c.env, 'mesas', body.mesa_id, { estado: 'ocupada' })
 
     return c.json({
       success: true,
@@ -334,19 +395,25 @@ app.post('/api/pedidos', authMiddleware, async (c) => {
   }
 })
 
-// ── Get active pedidos for a mesa ──
+// ── Get pedidos by mesa ──
 app.get('/api/pedidos/mesa/:mesaId', authMiddleware, async (c) => {
   const mesaId = c.req.param('mesaId')
-  const databases = createServerClient(c)
-  const dbId = c.env.APPWRITE_DATABASE_ID
 
   try {
-    const result = await databases.listDocuments(dbId, 'pedidos', [
-      Query.equal('mesa_id', mesaId),
-      Query.equal('estado', 'activo'),
-      Query.limit(10),
-    ])
-    return c.json({ pedidos: result.documents })
+    const url = `${getEndpoint(c.env)}/databases/${c.env.APPWRITE_DATABASE_ID}/collections/pedidos/documents`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: appwriteHeaders(c.env),
+      body: JSON.stringify({
+        queries: [
+          JSON.stringify({ method: 'equal', attribute: 'mesa_id', values: [mesaId] }),
+          JSON.stringify({ method: 'equal', attribute: 'estado', values: ['activo'] }),
+          JSON.stringify({ method: 'limit', values: [10] }),
+        ]
+      }),
+    })
+    const data = await res.json()
+    return c.json({ pedidos: data.documents || [] })
   } catch (error: any) {
     console.error('Error fetching pedidos:', error.message)
     return c.json({ error: 'Error del servidor' }, 500)
@@ -366,30 +433,23 @@ app.post('/api/facturas', authMiddleware, async (c) => {
     return c.json({ error: 'pedido_id y metodo_pago son requeridos' }, 400)
   }
 
-  const databases = createServerClient(c)
-  const dbId = c.env.APPWRITE_DATABASE_ID
-
   try {
     // Get ticket counter
-    let ticketNumero: string
+    let ticketNumero = '000001'
     try {
-      const counterDoc = asDoc<CounterDoc>(await databases.getDocument(dbId, 'contadores', 'ticket-counter'))
-      ticketNumero = String(Number(counterDoc.valor) + 1).padStart(6, '0')
-      await databases.updateDocument(dbId, 'contadores', 'ticket-counter', {
-        valor: Number(counterDoc.valor) + 1,
-      })
+      const counter = await getDocument(c.env, 'contadores', 'ticket-counter')
+      const nextVal = (counter.valor || 0) + 1
+      ticketNumero = String(nextVal).padStart(6, '0')
+      await updateDocument(c.env, 'contadores', 'ticket-counter', { valor: nextVal })
     } catch {
-      ticketNumero = '000001'
+      // Counter doesn't exist, create it
       try {
-        await databases.createDocument(dbId, 'contadores', 'ticket-counter', {
-          nombre: 'ticket',
-          valor: 1,
-        })
+        await createDocument(c.env, 'contadores', 'ticket-counter', { nombre: 'ticket', valor: 1 })
       } catch { /* ignore if already created */ }
     }
 
     // Create factura
-    const factura = await databases.createDocument(dbId, 'facturas', 'unique()', {
+    const factura = await createDocument(c.env, 'facturas', 'unique()', {
       pedido_id: body.pedido_id,
       ticket_numero: ticketNumero,
       metodo_pago: body.metodo_pago,
@@ -399,15 +459,13 @@ app.post('/api/facturas', authMiddleware, async (c) => {
     })
 
     // Update pedido estado
-    await databases.updateDocument(dbId, 'pedidos', body.pedido_id, {
-      estado: 'facturado',
-    })
+    await updateDocument(c.env, 'pedidos', body.pedido_id, { estado: 'facturado' })
 
-    // Get pedido to free mesa
-    const pedido = asDoc<PedidoDoc>(await databases.getDocument(dbId, 'pedidos', body.pedido_id))
-    await databases.updateDocument(dbId, 'mesas', pedido.mesa_id, {
-      estado: 'libre',
-    })
+    // Free mesa
+    const pedido = await getDocument(c.env, 'pedidos', body.pedido_id)
+    if (pedido.mesa_id) {
+      await updateDocument(c.env, 'mesas', pedido.mesa_id, { estado: 'libre' })
+    }
 
     return c.json({
       success: true,
@@ -432,40 +490,66 @@ app.get('/api/stats', authMiddleware, async (c) => {
     return c.json({ error: 'Acceso denegado' }, 403)
   }
 
-  const databases = createServerClient(c)
-  const dbId = c.env.APPWRITE_DATABASE_ID
-
   try {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const facturas = await databases.listDocuments(dbId, 'facturas', [
-      Query.greaterThanEqual('fecha', today.toISOString()),
-      Query.limit(500),
-    ])
+    // Get today's facturas
+    const facturasUrl = `${getEndpoint(c.env)}/databases/${c.env.APPWRITE_DATABASE_ID}/collections/facturas/documents`
+    const facturasRes = await fetch(facturasUrl, {
+      method: 'POST',
+      headers: appwriteHeaders(c.env),
+      body: JSON.stringify({
+        queries: [
+          JSON.stringify({ method: 'greaterThanEqual', attribute: 'fecha', values: [today.toISOString()] }),
+          JSON.stringify({ method: 'limit', values: [500] }),
+        ]
+      }),
+    })
+    const facturasData = await facturasRes.json()
+    const facturas = facturasData.documents || []
 
-    const totalIngresos = facturas.documents.reduce((sum: number, f: any) => sum + (f.subtotal || 0), 0)
-    const totalPropina = facturas.documents.reduce((sum: number, f: any) => sum + (f.propina || 0), 0)
-    const totalFacturas = facturas.total
+    const totalIngresos = facturas.reduce((sum: number, f: any) => sum + (f.subtotal || 0), 0)
+    const totalPropina = facturas.reduce((sum: number, f: any) => sum + (f.propina || 0), 0)
+    const totalFacturas = facturasData.total || facturas.length
 
-    const pedidosActivos = await databases.listDocuments(dbId, 'pedidos', [
-      Query.equal('estado', 'activo'),
-      Query.limit(100),
-    ])
+    // Get active pedidos
+    const pedidosUrl = `${getEndpoint(c.env)}/databases/${c.env.APPWRITE_DATABASE_ID}/collections/pedidos/documents`
+    const pedidosRes = await fetch(pedidosUrl, {
+      method: 'POST',
+      headers: appwriteHeaders(c.env),
+      body: JSON.stringify({
+        queries: [
+          JSON.stringify({ method: 'equal', attribute: 'estado', values: ['activo'] }),
+          JSON.stringify({ method: 'limit', values: [100] }),
+        ]
+      }),
+    })
+    const pedidosData = await pedidosRes.json()
 
-    const mesas = await databases.listDocuments(dbId, 'mesas', [Query.limit(100)])
-    const mesasOcupadas = mesas.documents.filter((m: any) => m.estado === 'ocupada').length
-    const mesasLibres = mesas.documents.filter((m: any) => m.estado === 'libre').length
+    // Get mesas
+    const mesasUrl = `${getEndpoint(c.env)}/databases/${c.env.APPWRITE_DATABASE_ID}/collections/mesas/documents`
+    const mesasRes = await fetch(mesasUrl, {
+      method: 'POST',
+      headers: appwriteHeaders(c.env),
+      body: JSON.stringify({
+        queries: [JSON.stringify({ method: 'limit', values: [100] })]
+      }),
+    })
+    const mesasData = await mesasRes.json()
+    const mesas = mesasData.documents || []
+    const mesasOcupadas = mesas.filter((m: any) => m.estado === 'ocupada').length
+    const mesasLibres = mesas.filter((m: any) => m.estado === 'libre').length
 
     return c.json({
       ingresos_hoy: totalIngresos,
       propinas_hoy: totalPropina,
       facturas_hoy: totalFacturas,
       ticket_promedio: totalFacturas > 0 ? totalIngresos / totalFacturas : 0,
-      pedidos_activos: pedidosActivos.total,
+      pedidos_activos: pedidosData.total || 0,
       mesas_ocupadas: mesasOcupadas,
       mesas_libres: mesasLibres,
-      total_mesas: mesas.total,
+      total_mesas: mesasData.total || mesas.length,
     })
   } catch (error: any) {
     console.error('Error fetching stats:', error.message)
@@ -473,7 +557,7 @@ app.get('/api/stats', authMiddleware, async (c) => {
   }
 })
 
-// ── Print endpoints (authenticated) ──
+// ── Print endpoints ──
 app.post('/api/print/kitchen', authMiddleware, async (c) => {
   const body = await c.req.json()
   console.log('Kitchen print request:', body)
@@ -486,7 +570,7 @@ app.post('/api/print/caja', authMiddleware, async (c) => {
   return c.json({ success: true })
 })
 
-// ── Catch-all for undefined API routes ──
+// ── Catch-all ──
 app.all('/api/*', (c) => {
   return c.json({ error: 'Endpoint no encontrado' }, 404)
 })
