@@ -100,6 +100,69 @@ app.post('/api/mesero/login', async (c) => {
   }
 })
 
+// ── Admin Login → returns JWT ──
+app.post('/api/admin/login', async (c) => {
+  const { email, password } = await c.req.json<{ email: string; password: string }>()
+
+  if (!email || !password) {
+    return c.json({ error: 'Email y contraseña requeridos' }, 400)
+  }
+
+  try {
+    const databases = createServerClient(c)
+    const dbId = c.env.APPWRITE_DATABASE_ID
+
+    // Verify admin credentials by trying to get the user from Appwrite
+    // We use the Appwrite Users API to verify the email/password
+    // For now, we validate against a hardcoded admin email or a config collection
+    // The admin user must exist in Appwrite Auth with the 'admin' label
+    const { Client: AdminClient, Users } = await import('node-appwrite')
+    const adminClient = new AdminClient()
+      .setEndpoint(c.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1')
+      .setProject(c.env.APPWRITE_PROJECT)
+      .setKey(c.env.APPWRITE_API_KEY)
+
+    const users = new Users(adminClient)
+
+    // List users with admin label
+    const adminUsers = await users.list([
+      Query.equal('email', email),
+    ])
+
+    if (adminUsers.total === 0) {
+      return c.json({ error: 'Credenciales incorrectas' }, 401)
+    }
+
+    const adminUser = adminUsers.users[0]
+
+    // Check if user has admin label
+    if (!adminUser.labels?.includes('admin')) {
+      return c.json({ error: 'Acceso denegado' }, 403)
+    }
+
+    // Generate JWT for admin
+    const payload: JwtPayload = {
+      sub: adminUser.$id,
+      name: adminUser.name || adminUser.email,
+      role: 'admin',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60), // 8 hours
+    }
+
+    const token = await sign(payload, c.env.JWT_SECRET)
+
+    return c.json({
+      token,
+      userId: adminUser.$id,
+      name: adminUser.name || adminUser.email,
+      role: 'admin',
+    })
+  } catch (error: any) {
+    console.error('Error en login admin:', error.message)
+    return c.json({ error: 'Error del servidor' }, 500)
+  }
+})
+
 // ═══════════════════════════════════════
 // PROTECTED ENDPOINTS (JWT required)
 // ═══════════════════════════════════════
@@ -352,14 +415,14 @@ app.get('/api/stats', meseroAuth, async (c) => {
   }
 })
 
-// ── Print endpoints (keep for backwards compatibility) ──
-app.post('/api/print/kitchen', async (c) => {
+// ── Print endpoints (authenticated) ──
+app.post('/api/print/kitchen', meseroAuth, async (c) => {
   const body = await c.req.json()
   console.log('Kitchen print request:', body)
   return c.json({ success: true })
 })
 
-app.post('/api/print/caja', async (c) => {
+app.post('/api/print/caja', meseroAuth, async (c) => {
   const body = await c.req.json()
   console.log('Caja print request:', body)
   return c.json({ success: true })

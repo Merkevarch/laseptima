@@ -1,6 +1,7 @@
 name = "laseptima-api"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
 
 # Variables de entorno - NO poner secrets aqui
 # Usar: wrangler secret put APPWRITE_API_KEY

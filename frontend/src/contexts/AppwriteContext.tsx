@@ -4,6 +4,7 @@ import { Client, Account } from 'appwrite'
 const APPWRITE_ENDPOINT = import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1'
 const APPWRITE_PROJECT = import.meta.env.VITE_APPWRITE_PROJECT || ''
 const DB_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID || ''
+const API_BASE = import.meta.env.VITE_API_URL || ''
 
 type UserRole = 'admin' | 'mesero' | null
 
@@ -46,8 +47,15 @@ export const AppwriteProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // Try admin session first (Appwrite native)
       const session = await account.get()
       if (session.labels?.includes('admin')) {
-        setUser({ $id: session.$id, name: session.name || session.email, role: 'admin' })
+        const userInfo: UserInfo = {
+          $id: session.$id,
+          name: session.name || session.email,
+          role: 'admin',
+        }
+        setUser(userInfo)
         setRole('admin')
+        // Also store admin info for quick restore
+        localStorage.setItem(USER_KEY, JSON.stringify(userInfo))
         setLoading(false)
         return
       }
@@ -81,22 +89,43 @@ export const AppwriteProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLoading(false)
   }
 
-  // ── Admin login (Appwrite native session) ──
+  // ── Admin login (Appwrite native session + get JWT from Worker) ──
   const loginAdmin = async (email: string, password: string) => {
+    // 1. Create Appwrite session
     await account.createEmailSession(email, password)
     const session = await account.get()
+
     const userInfo: UserInfo = {
       $id: session.$id,
       name: session.name || session.email,
       role: 'admin',
     }
+
+    // 2. Also get a JWT from the Worker for API calls
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        localStorage.setItem(TOKEN_KEY, data.token)
+      }
+    } catch {
+      // If admin login endpoint not available, continue without JWT
+      // Admin will only have Appwrite session access
+    }
+
+    localStorage.setItem(USER_KEY, JSON.stringify(userInfo))
     setUser(userInfo)
     setRole('admin')
   }
 
   // ── Mesero login (PIN → JWT) ──
   const loginMesero = async (pin: string) => {
-    const response = await fetch('/api/mesero/login', {
+    const response = await fetch(`${API_BASE}/api/mesero/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin }),
@@ -135,7 +164,7 @@ export const AppwriteProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setRole(null)
   }
 
-  // ── apiFetch: fetch with JWT header ──
+  // ── apiFetch: fetch with JWT header and API_BASE ──
   const apiFetch = useCallback(async (path: string, options: RequestInit = {}): Promise<Response> => {
     const token = localStorage.getItem(TOKEN_KEY)
     const headers: Record<string, string> = {
@@ -147,7 +176,8 @@ export const AppwriteProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       headers['Authorization'] = `Bearer ${token}`
     }
 
-    const response = await fetch(path, { ...options, headers })
+    const url = `${API_BASE}${path}`
+    const response = await fetch(url, { ...options, headers })
 
     // If 401, token expired → logout
     if (response.status === 401) {
