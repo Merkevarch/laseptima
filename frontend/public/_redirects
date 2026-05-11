@@ -1,1 +1,5 @@
+# API routes are handled by Pages Function (functions/api/[[route]].ts)
+# No redirect needed - Functions take priority over _redirects
+
+# SPA catch-all: all non-API, non-static routes serve index.html
 /*  /index.html  200

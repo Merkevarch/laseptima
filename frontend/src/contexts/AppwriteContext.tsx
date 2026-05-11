@@ -4,6 +4,11 @@ import { Client, Account } from 'appwrite'
 const APPWRITE_ENDPOINT = import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1'
 const APPWRITE_PROJECT = import.meta.env.VITE_APPWRITE_PROJECT || ''
 const DB_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID || ''
+
+// API_BASE: Use relative paths (/api/...) so requests go to the same origin.
+// In production, Cloudflare Pages Function (functions/api/[[route]].ts) proxies
+// these to the Worker API. In development, Vite's dev server proxy handles it.
+// Optionally, VITE_API_URL can still be set to override (e.g., direct Worker URL).
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
 type UserRole = 'admin' | 'mesero' | null

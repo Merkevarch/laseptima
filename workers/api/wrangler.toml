@@ -9,3 +9,5 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 APPWRITE_ENDPOINT = "https://cloud.appwrite.io/v1"
+APPWRITE_PROJECT = "69fe3625003ce05edab5"
+APPWRITE_DATABASE_ID = "69fe36d7002894d4896a"
