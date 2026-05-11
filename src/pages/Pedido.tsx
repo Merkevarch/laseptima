@@ -3,7 +3,27 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { databases } from '../lib/appwrite'
 import { useAppwrite } from '../contexts/AppwriteContext'
 import toast from 'react-hot-toast'
-import type { Producto, Categoria, Mesa } from '../../../shared/index'
+
+type Producto = {
+  $id: string
+  nombre: string
+  precio: number
+  categoria: string
+  descripcion: string
+  disponible_hoy: boolean
+}
+
+type Categoria = {
+  $id: string
+  nombre: string
+}
+
+type Mesa = {
+  $id: string
+  numero: number
+  capacidad: number
+  estado: string
+}
 
 type ItemPedido = {
   producto: Producto
@@ -14,7 +34,7 @@ type ItemPedido = {
 export default function Pedido() {
   const { mesaId } = useParams<{ mesaId: string }>()
   const navigate = useNavigate()
-  const { apiFetch, dbId, user } = useAppwrite()
+  const { dbId, user } = useAppwrite()
   const [mesa, setMesa] = useState<Mesa | null>(null)
   const [productos, setProductos] = useState<Producto[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
@@ -36,7 +56,6 @@ export default function Pedido() {
       ])
       setMesa(mesaRes as unknown as Mesa)
 
-      // Only show available products
       const available = (productosRes.documents as unknown as Producto[]).filter(p => p.disponible_hoy)
       setProductos(available)
       setCategorias(categoriasRes.documents as unknown as Categoria[])
@@ -84,7 +103,6 @@ export default function Pedido() {
     ? productos
     : productos.filter(p => p.categoria === activeCategory)
 
-  // Get unique categories from products
   const productCategories = [...new Set(productos.map(p => p.categoria))]
 
   const enviarACocina = async () => {
@@ -92,25 +110,31 @@ export default function Pedido() {
 
     setEnviando(true)
     try {
-      const response = await apiFetch('/api/pedidos', {
-        method: 'POST',
-        body: JSON.stringify({
-          mesa_id: mesa.$id,
-          total,
-          items: items.map(item => ({
-            producto_id: item.producto.$id,
-            producto_nombre: item.producto.nombre,
-            cantidad: item.cantidad,
-            precio_unitario: item.producto.precio,
-            notas: item.notas,
-          })),
-        }),
+      // 1. Create pedido
+      const pedido = await databases.createDocument(dbId, 'pedidos', 'unique()', {
+        mesa_id: mesa.$id,
+        mesero_id: user?.$id || '',
+        fecha_hora: new Date().toISOString(),
+        total,
+        estado: 'activo',
       })
 
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Error creando pedido')
+      // 2. Create items
+      for (const item of items) {
+        await databases.createDocument(dbId, 'pedidos_detalle', 'unique()', {
+          pedido_id: pedido.$id,
+          producto_id: item.producto.$id,
+          cantidad: item.cantidad,
+          precio_unitario: item.producto.precio,
+          notas: item.notas || '',
+          estado_item: 'pendiente',
+        })
       }
+
+      // 3. Update mesa status
+      await databases.updateDocument(dbId, 'mesas', mesa.$id, {
+        estado: 'ocupada',
+      })
 
       toast.success(`Pedido enviado a cocina - Mesa ${mesa.numero}`)
       navigate('/mesas')

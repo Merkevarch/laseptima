@@ -30,26 +30,10 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<Navigate to="/mesas" replace />} />
-          <Route path="/mesas" element={
-            <ProtectedRoute roles={['admin', 'mesero']}>
-              <Mesas />
-            </ProtectedRoute>
-          } />
-          <Route path="/pedido/:mesaId" element={
-            <ProtectedRoute roles={['admin', 'mesero']}>
-              <Pedido />
-            </ProtectedRoute>
-          } />
-          <Route path="/admin" element={
-            <ProtectedRoute roles={['admin']}>
-              <Admin />
-            </ProtectedRoute>
-          } />
-          <Route path="/facturacion" element={
-            <ProtectedRoute roles={['admin']}>
-              <Facturacion />
-            </ProtectedRoute>
-          } />
+          <Route path="/mesas" element={<ProtectedRoute roles={['admin', 'mesero']}><Mesas /></ProtectedRoute>} />
+          <Route path="/pedido/:mesaId" element={<ProtectedRoute roles={['admin', 'mesero']}><Pedido /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute roles={['admin']}><Admin /></ProtectedRoute>} />
+          <Route path="/facturacion" element={<ProtectedRoute roles={['admin']}><Facturacion /></ProtectedRoute>} />
         </Routes>
       </div>
     </AppwriteProvider>

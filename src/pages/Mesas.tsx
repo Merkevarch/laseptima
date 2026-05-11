@@ -3,7 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useAppwrite } from '../contexts/AppwriteContext'
 import { databases } from '../lib/appwrite'
 import client from '../lib/appwrite'
-import type { Mesa } from '../../../shared/index'
+
+type Mesa = {
+  $id: string
+  numero: number
+  capacidad: number
+  estado: string
+}
 
 export default function Mesas() {
   const [mesas, setMesas] = useState<Mesa[]>([])

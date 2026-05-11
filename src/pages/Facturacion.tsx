@@ -3,7 +3,25 @@ import { useNavigate } from 'react-router-dom'
 import { databases } from '../lib/appwrite'
 import { useAppwrite } from '../contexts/AppwriteContext'
 import toast from 'react-hot-toast'
-import type { Pedido, PedidoDetalle } from '../../../shared/index'
+
+type Pedido = {
+  $id: string
+  mesa_id: string
+  mesero_id: string
+  fecha_hora: string
+  total: number
+  estado: string
+}
+
+type PedidoDetalle = {
+  $id: string
+  pedido_id: string
+  producto_id: string
+  cantidad: number
+  precio_unitario: number
+  notas: string
+  estado_item: string
+}
 
 export default function Facturacion() {
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([])
@@ -14,7 +32,7 @@ export default function Facturacion() {
   const [propinaPercent, setPropinaPercent] = useState(0)
   const [loading, setLoading] = useState(true)
   const [facturando, setFacturando] = useState(false)
-  const { dbId, apiFetch } = useAppwrite()
+  const { dbId } = useAppwrite()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -55,23 +73,39 @@ export default function Facturacion() {
       const subtotal = selectedPedido.total
       const totalPropina = propinaPercent > 0 ? subtotal * (propinaPercent / 100) : propina
 
-      const response = await apiFetch('/api/facturas', {
-        method: 'POST',
-        body: JSON.stringify({
-          pedido_id: selectedPedido.$id,
-          metodo_pago: metodoPago,
-          subtotal,
-          propina: totalPropina,
-        }),
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Error creando factura')
+      // Get ticket counter
+      let ticketNumero = '000001'
+      try {
+        const counter = await databases.getDocument(dbId, 'contadores', 'ticket-counter') as any
+        const nextVal = (counter.valor || 0) + 1
+        ticketNumero = String(nextVal).padStart(6, '0')
+        await databases.updateDocument(dbId, 'contadores', 'ticket-counter', { valor: nextVal })
+      } catch {
+        // Counter doesn't exist, create it
+        try {
+          await databases.createDocument(dbId, 'contadores', 'ticket-counter', { nombre: 'ticket', valor: 1 })
+        } catch { /* already exists */ }
       }
 
-      const data = await response.json()
-      toast.success(`Factura #${data.factura.ticket_numero} creada correctamente`)
+      // Create factura
+      await databases.createDocument(dbId, 'facturas', 'unique()', {
+        pedido_id: selectedPedido.$id,
+        ticket_numero: ticketNumero,
+        metodo_pago: metodoPago,
+        subtotal,
+        propina: totalPropina,
+        fecha: new Date().toISOString(),
+      })
+
+      // Update pedido estado
+      await databases.updateDocument(dbId, 'pedidos', selectedPedido.$id, { estado: 'facturado' })
+
+      // Free mesa
+      if (selectedPedido.mesa_id) {
+        await databases.updateDocument(dbId, 'mesas', selectedPedido.mesa_id, { estado: 'libre' })
+      }
+
+      toast.success(`Factura #${ticketNumero} creada correctamente`)
       setSelectedPedido(null)
       setPropina(0)
       setPropinaPercent(0)
