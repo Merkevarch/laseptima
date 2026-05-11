@@ -43,27 +43,8 @@ export const AppwriteProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [])
 
   const restoreSession = async () => {
-    try {
-      // Try admin session first (Appwrite native)
-      const session = await account.get()
-      if (session.labels?.includes('admin')) {
-        const userInfo: UserInfo = {
-          $id: session.$id,
-          name: session.name || session.email,
-          role: 'admin',
-        }
-        setUser(userInfo)
-        setRole('admin')
-        // Also store admin info for quick restore
-        localStorage.setItem(USER_KEY, JSON.stringify(userInfo))
-        setLoading(false)
-        return
-      }
-    } catch {
-      // Not an Appwrite session, try JWT
-    }
-
-    // Try mesero JWT session
+    // Both admin and mesero sessions are stored as JWT in localStorage
+    // No need to check Appwrite Auth sessions (avoids CORS issues)
     const token = localStorage.getItem(TOKEN_KEY)
     const storedUser = localStorage.getItem(USER_KEY)
 
@@ -89,36 +70,32 @@ export const AppwriteProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLoading(false)
   }
 
-  // ── Admin login (Appwrite native session + get JWT from Worker) ──
+  // ── Admin login (via Worker API - no CORS issues) ──
   const loginAdmin = async (email: string, password: string) => {
-    // 1. Create Appwrite session
-    await account.createEmailSession(email, password)
-    const session = await account.get()
+    // All auth goes through the Worker API (server-to-server with Appwrite)
+    // This avoids CORS issues since the browser only talks to our Worker
+    const response = await fetch(`${API_BASE}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
 
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.error || 'Credenciales incorrectas')
+    }
+
+    const data = await response.json()
     const userInfo: UserInfo = {
-      $id: session.$id,
-      name: session.name || session.email,
+      $id: data.userId,
+      name: data.name,
       role: 'admin',
     }
 
-    // 2. Also get a JWT from the Worker for API calls
-    try {
-      const response = await fetch(`${API_BASE}/api/admin/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        localStorage.setItem(TOKEN_KEY, data.token)
-      }
-    } catch {
-      // If admin login endpoint not available, continue without JWT
-      // Admin will only have Appwrite session access
-    }
-
+    // Store JWT and user info
+    localStorage.setItem(TOKEN_KEY, data.token)
     localStorage.setItem(USER_KEY, JSON.stringify(userInfo))
+
     setUser(userInfo)
     setRole('admin')
   }

@@ -101,6 +101,7 @@ app.post('/api/mesero/login', async (c) => {
 })
 
 // ── Admin Login → returns JWT ──
+// Validates email/password against Appwrite Auth server-side (no CORS issues)
 app.post('/api/admin/login', async (c) => {
   const { email, password } = await c.req.json<{ email: string; password: string }>()
 
@@ -109,38 +110,77 @@ app.post('/api/admin/login', async (c) => {
   }
 
   try {
-    const databases = createServerClient(c)
-    const dbId = c.env.APPWRITE_DATABASE_ID
+    const endpoint = c.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1'
+    const projectId = c.env.APPWRITE_PROJECT
 
-    // Verify admin credentials by trying to get the user from Appwrite
-    // We use the Appwrite Users API to verify the email/password
-    // For now, we validate against a hardcoded admin email or a config collection
-    // The admin user must exist in Appwrite Auth with the 'admin' label
+    // Step 1: Validate credentials by creating a session server-side via REST API
+    // This avoids CORS issues since it's server-to-server
+    const sessionResponse = await fetch(`${endpoint}/account/sessions/email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Appwrite-Project': projectId,
+        'X-Appwrite-Key': c.env.APPWRITE_API_KEY,
+      },
+      body: JSON.stringify({
+        userId: email,
+        email,
+        password,
+      }),
+    })
+
+    if (!sessionResponse.ok) {
+      const errorData = await sessionResponse.json() as any
+      console.error('Appwrite session error:', errorData.message)
+      return c.json({ error: 'Credenciales incorrectas' }, 401)
+    }
+
+    const sessionData = await sessionResponse.json() as any
+    const userId = sessionData.userId || sessionData.$id
+
+    // Step 2: Verify the user has the 'admin' label using the Users API
     const { Client: AdminClient, Users } = await import('node-appwrite')
     const adminClient = new AdminClient()
-      .setEndpoint(c.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1')
-      .setProject(c.env.APPWRITE_PROJECT)
+      .setEndpoint(endpoint)
+      .setProject(projectId)
       .setKey(c.env.APPWRITE_API_KEY)
 
     const users = new Users(adminClient)
 
-    // List users with admin label
-    const adminUsers = await users.list([
-      Query.equal('email', email),
-    ])
-
-    if (adminUsers.total === 0) {
-      return c.json({ error: 'Credenciales incorrectas' }, 401)
+    let adminUser: any
+    try {
+      adminUser = await users.get(userId)
+    } catch {
+      // Fallback: try to find by email
+      const adminUsers = await users.list([
+        Query.equal('email', email),
+      ])
+      if (adminUsers.total === 0) {
+        return c.json({ error: 'Credenciales incorrectas' }, 401)
+      }
+      adminUser = adminUsers.users[0]
     }
-
-    const adminUser = adminUsers.users[0]
 
     // Check if user has admin label
     if (!adminUser.labels?.includes('admin')) {
-      return c.json({ error: 'Acceso denegado' }, 403)
+      return c.json({ error: 'Acceso denegado - no es administrador' }, 403)
     }
 
-    // Generate JWT for admin
+    // Step 3: Delete the Appwrite session (we only use JWT, not Appwrite sessions)
+    try {
+      await fetch(`${endpoint}/account/sessions/${sessionData.$id}`, {
+        method: 'DELETE',
+        headers: {
+          'X-Appwrite-Project': projectId,
+          'X-Appwrite-Key': c.env.APPWRITE_API_KEY,
+          'X-Appwrite-Session': sessionData.$id,
+        },
+      })
+    } catch {
+      // Ignore cleanup errors
+    }
+
+    // Step 4: Generate our JWT
     const payload: JwtPayload = {
       sub: adminUser.$id,
       name: adminUser.name || adminUser.email,
